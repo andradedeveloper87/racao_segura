@@ -1,88 +1,95 @@
 import streamlit as st
-import re
+import sqlite3
+from datetime import datetime
+import time
 
-# Configuração da página
-st.set_page_config(page_title="Ração Segura v0.1.0", layout="wide")
+# --- CONFIGURAÇÃO DO BANCO DE DATOS ---
+def init_db():
+    conn = sqlite3.connect('racao_segura_v010.db')
+    c = conn.cursor()
+    # Tabela principal para todos os cadastros citados
+    c.execute('''CREATE TABLE IF NOT EXISTS cadastros (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo_registro TEXT,
+                    detalhes TEXT,
+                    valor_qtd REAL,
+                    data_fab TEXT,
+                    data_val TEXT,
+                    timestamp DATETIME)''')
+    conn.commit()
+    conn.close()
 
-# --- FUNÇÃO DE VALIDAÇÃO DE SENHA ---
-def validar_senha(senha):
-    # Regra: 10 letras, 2 números, 1 caractere especial
-    if len(senha) < 13: return False
-    letras = len(re.findall(r'[a-zA-Z]', senha))
-    numeros = len(re.findall(r'[0-9]', senha))
-    especiais = len(re.findall(r'[!@#$%^&*(),.?":{}|<>]', senha))
-    
-    return letras >= 10 and numeros >= 2 and especiais >= 1
+def salvar_dados(tipo, detalhes, valor=0, fab="", val=""):
+    conn = sqlite3.connect('racao_segura_v010.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO cadastros (tipo_registro, detalhes, valor_qtd, data_fab, data_val, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+              (tipo, detalhes, valor, fab, val, datetime.now()))
+    conn.commit()
+    conn.close()
 
-# --- BARRA LATERAL (Navegação) ---
-st.sidebar.title("🛡️ Ração Segura v0.1.0")
-menu = st.sidebar.selectbox("Navegação", [
-    "Login", 
-    "Produtos & Animais", 
-    "Produção & Estoque", 
-    "Qualidade & Fornecedores",
-    "Vendas & Perdas"
+# --- INICIALIZAÇÃO DO ESTADO DO SISTEMA ---
+if 'sistema_ativo' not in st.session_state:
+    st.session_state.sistema_ativo = True
+
+init_db()
+
+# --- LÓGICA DO LOOP DE INTERFACE ---
+if not st.session_state.sistema_ativo:
+    st.error("⚠️ O SISTEMA DA FÁBRICA FOI DESLIGADO.")
+    if st.button("Religar Sistema"):
+        st.session_state.sistema_ativo = True
+        st.rerun()
+    st.stop() # Interrompe o loop do Streamlit aqui
+
+# --- INTERFACE ---
+st.title("🛡️ Ração Segura v0.1.0")
+st.sidebar.header("Painel de Operações")
+
+# Opções de Cadastro conforme sua solicitação
+categoria = st.sidebar.selectbox("Selecione a Operação", [
+    "Produto e Animal", "Análise Laboratorial", "Fornecedor", 
+    "Produção Diária/Mensal", "Estoque", "Vendas e Pedidos", "Perdas"
 ])
 
-# --- LÓGICA DAS TELAS ---
+st.subheader(f"Cadastro de {categoria}")
 
-if menu == "Login":
-    st.header("Acesso ao Sistema")
-    with st.form("login_form"):
-        usuario = st.text_input("Usuário")
-        senha = st.text_input("Senha", type="password", help="10 letras, 2 números e 1 caractere especial")
-        submit = st.form_submit_button("Entrar")
+with st.form("form_geral", clear_on_submit=True):
+    if categoria == "Produto e Animal":
+        nome = st.text_input("Nome da Ração")
+        tipo_animal = st.text_input("Tipo de Animal (ex: Bovino)")
+        peso = st.number_input("Peso (kg)", min_value=0.0)
+        fab = st.date_input("Data de Fabricação")
+        val = st.date_input("Data de Validade")
+        detalhes = f"Ração: {nome} | Animal: {tipo_animal}"
         
-        if submit:
-            if validar_senha(senha):
-                st.success(f"Bem-vindo, {usuario}!")
-            else:
-                st.error("Senha fora do padrão exigido!")
-
-elif menu == "Produtos & Animais":
-    st.header("Cadastro de Produtos")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.text_input("Nome da Ração")
-        st.selectbox("Tipo de Animal", ["Bovinos", "Suínos", "Aves", "Pets", "Outros"])
-    with col2:
-        st.date_input("Data de Fabricação")
-        st.date_input("Data de Validade")
-    st.button("Cadastrar Produto")
-
-elif menu == "Produção & Estoque":
-    st.header("Controle de Produção e Estoque")
-    tab1, tab2 = st.tabs(["Produção Diária/Mensal", "Estoque"])
-    
-    with tab1:
-        st.number_input("Quantidade Produzida (kg)", min_value=0)
-        st.radio("Período", ["Diário", "Mensal"])
-        st.button("Registrar Produção")
+    elif categoria == "Produção Diária/Mensal":
+        periodo = st.radio("Período", ["Diária", "Mensal"])
+        qtd = st.number_input("Quantidade Produzida (kg)")
+        detalhes = f"Produção {periodo}"
         
-    with tab2:
-        st.number_input("Peso Atual em Estoque (kg)", min_value=0)
-        st.button("Atualizar Estoque")
+    elif categoria == "Vendas e Pedidos":
+        tipo = st.radio("Tipo", ["Venda", "Pedido"])
+        valor = st.number_input("Valor total (R$)")
+        detalhes = f"Registro de {tipo}"
 
-elif menu == "Qualidade & Fornecedores":
-    st.header("Análises e Parceiros")
-    with st.expander("Nova Análise Laboratorial"):
-        st.file_uploader("Upload do Laudo")
-        st.text_area("Observações da Análise")
-        st.button("Salvar Análise")
-        
-    with st.expander("Cadastrar Fornecedor"):
-        st.text_input("Nome da Empresa / CNPJ")
-        st.button("Cadastrar Fornecedor")
+    # Adicione os outros campos conforme necessário seguindo o padrão...
 
-elif menu == "Vendas & Perdas":
-    st.header("Movimentação Financeira e de Material")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.subheader("Vendas e Pedidos")
-        st.number_input("Valor da Venda (R$)", min_value=0.0)
-        st.button("Registrar Venda/Pedido")
-    with col_b:
-        st.subheader("Perdas")
-        st.number_input("Quantidade Perdida (kg)", min_value=0.0)
-        st.text_input("Motivo da Perda")
-        st.button("Registrar Perda")
+    enviar = st.form_submit_button("Confirmar Registro")
+
+    if enviar:
+        # Aqui a lógica salva no SQLite e o loop continua
+        salvar_dados(categoria, detalhes, valor=locals().get('peso', 0) or locals().get('qtd', 0) or locals().get('valor', 0))
+        st.success(f"✅ {categoria} registrado no SQLite!")
+
+# --- BOTÃO DE DESLIGAMENTO ---
+st.sidebar.markdown("---")
+if st.sidebar.button("🔴 DESLIGAR SISTEMA NA FÁBRICA"):
+    st.session_state.sistema_ativo = False
+    st.rerun()
+
+# Visualização em Tempo Real (Opcional)
+if st.checkbox("Mostrar últimos registros do banco"):
+    conn = sqlite3.connect('racao_segura_v010.db')
+    data = conn.execute("SELECT * FROM cadastros ORDER BY id DESC LIMIT 10").fetchall()
+    st.table(data)
+    conn.close()
